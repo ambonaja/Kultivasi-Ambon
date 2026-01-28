@@ -78,7 +78,7 @@ title.Name = "Title"
 title.Size = UDim2.new(0, 180, 1, 0)
 title.Position = UDim2.new(0, 10, 0, 0)
 title.BackgroundTransparency = 1
-title.Text = "🎣 Auto Fish Farm v2.0"
+title.Text = "Gunung Jule⛰️"
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 16
@@ -495,7 +495,7 @@ local function toggleFarming()
             if isFarming then
                 local args = {
                     {
-                        hookPosition = vector.create(4272.125, 1204.4302978515625, -370.4991149902344),
+                        hookPosition = vector.create(4506.8994140625, 1189.9971923828125, -552.2802124023438),
                         powerPercent = 0
                     }
                 }
