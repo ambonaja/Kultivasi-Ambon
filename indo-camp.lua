@@ -29,7 +29,7 @@ task.spawn(function()
 	while true do
 		if autofarm then
 			-- ===== Remote 1 =====
-			task.wait(0.1)
+			task.wait()
 			pcall(function()
 				local args1 = {
 					buffer.fromstring("?\000\000\000@\240>{>\000\000\000\192\002\218\239\191\000\000\000@!\160\184?\028\255\135U\145s\237?")
@@ -38,7 +38,7 @@ task.spawn(function()
 			end)
 
 			-- ===== Remote 2 (InvokeServer ANTI FREEZE) =====
-			task.wait(0.1)
+			task.wait()
 			task.spawn(function()
 				pcall(function()
 					local args2 = {
@@ -51,7 +51,7 @@ task.spawn(function()
 			end)
 
 			-- ===== Remote 3 =====
-			task.wait(0.1)
+			task.wait()
 			pcall(function()
 				local args3 = {
 					buffer.fromstring("\017\001\000")
@@ -60,7 +60,7 @@ task.spawn(function()
 			end)
 		end
 
-		task.wait(0.05)
+		task.wait(0.001)
 	end
 end)
 
