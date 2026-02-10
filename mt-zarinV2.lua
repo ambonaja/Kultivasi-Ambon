@@ -1,5 +1,5 @@
 while true do
-task.wait(2.1)
+task.wait(2.5)
 
 local args = {
 	vector.create(31.991918563842773, 23.017704010009766, 278.2765197753906),
@@ -9,18 +9,18 @@ local args = {
 }
 game:GetService("ReplicatedStorage"):WaitForChild("FishingSystem"):WaitForChild("CastReplication"):FireServer(unpack(args))
 
-task.wait(2.1)
+task.wait(2.5)
 
 game:GetService("ReplicatedStorage"):WaitForChild("FishingSystem"):WaitForChild("PrecalcFish"):InvokeServer()
 
-task.wait(2.1)
+task.wait(2.5)
 
 local args = {
 	"rbxassetid://78467245624383"
 }
 game:GetService("ReplicatedStorage"):WaitForChild("FishingSystem"):WaitForChild("ReplicatePullAlert"):FireServer(unpack(args))
 
-task.wait(2.1)
+task.wait(2.5)
 
 local args = {
 	{
@@ -29,7 +29,7 @@ local args = {
 }
 game:GetService("ReplicatedStorage"):WaitForChild("FishingSystem"):WaitForChild("FishGiver"):FireServer(unpack(args))
 
-task.wait(2.1)
+task.wait(2.5)
 
 game:GetService("ReplicatedStorage"):WaitForChild("FishingSystem"):WaitForChild("CleanupCast"):FireServer()
 
