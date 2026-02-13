@@ -57,7 +57,7 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local LP = game:GetService("Players").LocalPlayer
 
 local Window = Rayfield:CreateWindow({
-   Name = "🚯 AmbonHub Official | Fishing Simulator GOD MODE v27",
+   Name = "🚯 AmbonHub Official | Get Fish V2 Peak Mode",
    LoadingTitle = "AmbonHub🚯...",
    LoadingSubtitle = "by AmbonGuard System",
    ConfigurationSaving = {
