@@ -67,6 +67,7 @@ local AllFishList = {
     "Zombie Megalodon",
     "ikan bandit",
     "Ancient Magma Whale"
+    "Love Nessie"
 }
 
 -- GUI Setup
