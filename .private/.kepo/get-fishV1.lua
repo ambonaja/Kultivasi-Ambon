@@ -193,7 +193,7 @@ local function startAutoReel()
     
     reelLoop = task.spawn(function()
         while autoReelEnabled do
-            task.wait(math.random(1,3))
+            task.wait(math.random(1,5))
             local success, err = pcall(function()
                 local args = {
                     {
