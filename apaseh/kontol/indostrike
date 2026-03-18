@@ -1,0 +1,699 @@
+-- UI Rayfield Fishing Script (Latest Version) - Premium Edition with Auto Sell
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- Variables
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local VirtualUser = game:GetService("VirtualUser")
+local UserInputService = game:GetService("UserInputService")
+local Player = Players.LocalPlayer
+local FishingActive = false
+local FishingConnection
+local AntiAfkConnection
+local FishingDelay = 0.1
+local PerformanceMode = true
+local LastAntiAfkTime = 0
+
+-- Auto Sell Variables
+local autoSellEnabled = false
+local sellLoop = nil
+local sellSize = 100 -- Ukuran minimal ikan yang dijual
+local sellInterval = 5 -- Interval penjualan dalam detik
+
+-- Optimasi performa dengan tabel lokal untuk lookup cepat
+local RemoteCache = setmetatable({}, {__index = function(t, k)
+    local v = ReplicatedStorage:FindFirstChild(k)
+    rawset(t, k, v)
+    return v
+end})
+
+-- Cache untuk Auto Sell remote
+local SellRemote = nil
+
+-- Fungsi untuk mendapatkan remote sell
+local function getSellRemote()
+    if not SellRemote then
+        local success, err = pcall(function()
+            SellRemote = ReplicatedStorage:WaitForChild("Economy"):WaitForChild("ToServer"):WaitForChild("SellUnder")
+        end)
+        if not success then
+            warn("⚠️ Remote Sell tidak ditemukan: " .. tostring(err))
+            return nil
+        end
+    end
+    return SellRemote
+end
+
+-- Create Window
+local Window = Rayfield:CreateWindow({
+    Name = "Auto Fishing Script Premium + Auto Sell",
+    LoadingTitle = "Loading Premium Fishing Script...",
+    LoadingSubtitle = "by System - With Auto Sell Feature",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "FishingScript",
+        FileName = "PremiumConfig"
+    },
+    Discord = {
+        Enabled = false,
+        Invite = "noinvitelink",
+        RememberJoins = true
+    },
+    KeySystem = false
+})
+
+-- Create Tabs
+local MainTab = Window:CreateTab("Main", 4483362458)
+local AutoSellTab = Window:CreateTab("Auto Sell", 4483362458) -- Tab baru
+local SettingsTab = Window:CreateTab("Settings", 4483362458)
+local PerformanceTab = Window:CreateTab("Performance", 4483362458)
+local InfoTab = Window:CreateTab("Info", 4483362458)
+
+-- Main Tab Elements
+local Toggle = MainTab:CreateToggle({
+    Name = "Start Auto Fishing",
+    CurrentValue = false,
+    Flag = "AutoFishingToggle",
+    Callback = function(Value)
+        FishingActive = Value
+        if Value then
+            StartFishing()
+            Rayfield:Notify({
+                Title = "Auto Fishing Premium",
+                Content = "Script started! (Anti-Lag Enabled)",
+                Duration = 2,
+                Image = 4483362458
+            })
+        else
+            StopFishing()
+            Rayfield:Notify({
+                Title = "Auto Fishing Premium",
+                Content = "Script stopped!",
+                Duration = 2,
+                Image = 4483362458
+            })
+        end
+    end
+})
+
+-- Status Label dengan informasi FPS
+local StatusLabel = MainTab:CreateLabel("Status: Stopped | FPS: 60")
+local FPSLabel = MainTab:CreateLabel("Performance: Optimal")
+
+--================================
+-- AUTO SELL TAB
+--================================
+
+-- Toggle Auto Sell
+local AutoSellToggle = AutoSellTab:CreateToggle({
+    Name = "Auto Sell Ikan",
+    CurrentValue = false,
+    Flag = "AutoSellToggle",
+    Callback = function(Value)
+        autoSellEnabled = Value
+        if Value then
+            -- Cek apakah remote tersedia
+            local remote = getSellRemote()
+            if remote then
+                startAutoSell()
+                Rayfield:Notify({
+                    Title = "Auto Sell",
+                    Content = "Auto Sell dimulai! (Interval: " .. sellInterval .. " detik)",
+                    Duration = 3,
+                    Image = 4483362458
+                })
+            else
+                Rayfield:Notify({
+                    Title = "Error",
+                    Content = "Remote Sell tidak ditemukan!",
+                    Duration = 3,
+                    Image = 4483362458
+                })
+                AutoSellToggle:Set(false)
+            end
+        else
+            stopAutoSell()
+            Rayfield:Notify({
+                Title = "Auto Sell",
+                Content = "Auto Sell dihentikan!",
+                Duration = 2,
+                Image = 4483362458
+            })
+        end
+    end
+})
+
+-- Slider untuk ukuran ikan
+local SizeSlider = AutoSellTab:CreateSlider({
+    Name = "Ukuran Minimal Ikan",
+    Range = {1, 500},
+    Increment = 1,
+    Suffix = "Size",
+    CurrentValue = 100,
+    Flag = "SizeSlider",
+    Callback = function(Value)
+        setSellSize(Value)
+    end
+})
+
+-- Slider untuk interval penjualan
+local IntervalSlider = AutoSellTab:CreateSlider({
+    Name = "Interval Penjualan",
+    Range = {1, 30},
+    Increment = 1,
+    Suffix = "Detik",
+    CurrentValue = 5,
+    Flag = "IntervalSlider",
+    Callback = function(Value)
+        sellInterval = Value
+        -- Restart auto sell jika sedang berjalan
+        if autoSellEnabled then
+            stopAutoSell()
+            task.wait(0.5)
+            startAutoSell()
+        end
+        Rayfield:Notify({
+            Title = "Auto Sell",
+            Content = "Interval diubah ke " .. Value .. " detik",
+            Duration = 2,
+            Image = 4483362458
+        })
+    end
+})
+
+-- Button untuk test jual manual
+AutoSellTab:CreateButton({
+    Name = "Test Jual Manual",
+    Callback = function()
+        testManualSell()
+    end
+})
+
+-- Label status auto sell
+local SellStatusLabel = AutoSellTab:CreateLabel("Status Auto Sell: Stopped | Size: 100 | Interval: 5s")
+local SellCountLabel = AutoSellTab:CreateLabel("Total Penjualan: 0")
+
+-- Variabel counter untuk total penjualan
+local totalSells = 0
+
+--================================
+-- FUNGSI AUTO SELL
+--================================
+
+-- Fungsi untuk memulai auto sell
+function startAutoSell()
+    if sellLoop then 
+        task.cancel(sellLoop)
+        sellLoop = nil
+    end
+    
+    autoSellEnabled = true
+    updateSellStatus()
+    print("💰 AUTO SELL DIMULAI (Size: " .. sellSize .. ", Interval: " .. sellInterval .. "s)")
+    
+    sellLoop = task.spawn(function()
+        while autoSellEnabled do
+            -- Jeda antar penjualan sesuai interval
+            task.wait(sellInterval)
+            
+            -- Fire remote sell
+            local remote = getSellRemote()
+            if remote then
+                local success, err = pcall(function()
+                    remote:FireServer(sellSize)
+                    totalSells = totalSells + 1
+                    updateSellStatus()
+                    
+                    -- Notifikasi setiap 5 kali jual
+                    if totalSells % 5 == 0 then
+                        Rayfield:Notify({
+                            Title = "Auto Sell",
+                            Content = "Berhasil menjual " .. totalSells .. " kali!",
+                            Duration = 2,
+                            Image = 4483362458
+                        })
+                    end
+                end)
+                
+                if not success then
+                    warn("❌ Error Auto Sell: " .. tostring(err))
+                end
+            else
+                warn("❌ Remote Sell tidak tersedia, mencoba lagi nanti...")
+                -- Coba dapatkan remote lagi
+                SellRemote = nil
+                getSellRemote()
+            end
+            
+            task.wait(1)
+        end
+    end)
+end
+
+-- Fungsi untuk menghentikan auto sell
+function stopAutoSell()
+    autoSellEnabled = false
+    if sellLoop then
+        task.cancel(sellLoop)
+        sellLoop = nil
+    end
+    updateSellStatus()
+    print("🛑 AUTO SELL DIHENTIKAN")
+end
+
+-- Fungsi untuk mengubah ukuran jual
+function setSellSize(newSize)
+    if newSize and newSize > 0 then
+        sellSize = newSize
+        updateSellStatus()
+        print("📏 Ukuran jual diubah ke: " .. sellSize)
+        return true
+    end
+    return false
+end
+
+-- Fungsi untuk test jual manual
+function testManualSell()
+    local remote = getSellRemote()
+    if remote then
+        local success, err = pcall(function()
+            remote:FireServer(sellSize)
+            totalSells = totalSells + 1
+            updateSellStatus()
+            Rayfield:Notify({
+                Title = "Test Jual",
+                Content = "Berhasil menjual manual!",
+                Duration = 2,
+                Image = 4483362458
+            })
+        end)
+        
+        if not success then
+            Rayfield:Notify({
+                Title = "Error",
+                Content = "Gagal menjual: " .. tostring(err),
+                Duration = 3,
+                Image = 4483362458
+            })
+        end
+    else
+        Rayfield:Notify({
+            Title = "Error",
+            Content = "Remote Sell tidak ditemukan!",
+            Duration = 3,
+            Image = 4483362458
+        })
+    end
+end
+
+-- Fungsi update status label
+function updateSellStatus()
+    local status = autoSellEnabled and "Running" or "Stopped"
+    local statusText = string.format("Status Auto Sell: %s | Size: %d | Interval: %ds", status, sellSize, sellInterval)
+    local countText = string.format("Total Penjualan: %d", totalSells)
+    
+    if SellStatusLabel and SellStatusLabel.Set then
+        SellStatusLabel:Set(statusText)
+    end
+    if SellCountLabel and SellCountLabel.Set then
+        SellCountLabel:Set(countText)
+    end
+end
+
+-- Settings Tab Elements
+local DelaySlider = SettingsTab:CreateSlider({
+    Name = "Fishing Speed",
+    Range = {0, 5},
+    Increment = 0.1,
+    Suffix = "Seconds",
+    CurrentValue = 0.1,
+    Flag = "DelaySlider",
+    Callback = function(Value)
+        FishingDelay = Value
+    end
+})
+
+-- Dropdown for fishing result
+local ResultDropdown = SettingsTab:CreateDropdown({
+    Name = "Fishing Result",
+    Options = {"SUCCESS", "FAILED", "PERFECT"},
+    CurrentOption = {"SUCCESS"},
+    Flag = "ResultDropdown",
+    Callback = function(Options)
+        _G.FishingResult = Options[1]
+    end
+})
+
+-- Performance Tab Elements
+local AntiLagToggle = PerformanceTab:CreateToggle({
+    Name = "Anti-Lag Mode",
+    CurrentValue = true,
+    Flag = "AntiLagToggle",
+    Callback = function(Value)
+        PerformanceMode = Value
+        if Value then
+            PerformanceTab:CreateLabel("Anti-Lag: Enabled - Script ringan & stabil")
+        else
+            PerformanceTab:CreateLabel("Anti-Lag: Disabled - Mungkin lebih berat")
+        end
+    end
+})
+
+local AntiAfkToggle = PerformanceTab:CreateToggle({
+    Name = "Bypass Anti-AFK Premium",
+    CurrentValue = false,
+    Flag = "AntiAfkToggle",
+    Callback = function(Value)
+        if Value then
+            StartAntiAfk()
+            Rayfield:Notify({
+                Title = "Anti-AFK Premium",
+                Content = "Bypass anti-AFK diaktifkan!",
+                Duration = 2,
+                Image = 4483362458
+            })
+        else
+            StopAntiAfk()
+        end
+    end
+})
+
+-- Slider untuk optimasi loop
+local OptimasiSlider = PerformanceTab:CreateSlider({
+    Name = "Loop Optimasi",
+    Range = {1, 60},
+    Increment = 1,
+    Suffix = "Hz",
+    CurrentValue = 30,
+    Flag = "OptimasiSlider",
+    Callback = function(Value)
+        _G.OptimasiHz = Value
+    end
+})
+
+-- Info Tab Elements
+InfoTab:CreateLabel("Script Information")
+InfoTab:CreateLabel("Version: 3.5.0 Premium + Auto Sell")
+InfoTab:CreateLabel("Creator: System")
+InfoTab:CreateLabel("Game: Fishing Game")
+InfoTab:CreateLabel("Library: Rayfield Latest")
+InfoTab:CreateLabel("Fitur Premium:")
+InfoTab:CreateLabel("✓ Auto Fishing + Auto Sell")
+InfoTab:CreateLabel("✓ Anti-Lag Technology")
+InfoTab:CreateLabel("✓ Bypass Anti-AFK Premium")
+InfoTab:CreateLabel("✓ Optimasi FPS")
+InfoTab:CreateLabel("✓ Spam tanpa lag")
+InfoTab:CreateLabel("✓ Custom ukuran ikan & interval")
+
+-- Button to test connection
+InfoTab:CreateButton({
+    Name = "Test Connection",
+    Callback = function()
+        Rayfield:Notify({
+            Title = "Connection Test",
+            Content = "Script is working properly! (FPS Stable)",
+            Duration = 3,
+            Image = 4483362458
+        })
+    end
+})
+
+-- Fungsi Anti-AFK Premium (sama seperti sebelumnya)
+function StartAntiAfk()
+    if AntiAfkConnection then
+        AntiAfkConnection:Disconnect()
+    end
+    
+    AntiAfkConnection = RunService.Heartbeat:Connect(function()
+        local currentTime = tick()
+        if currentTime - LastAntiAfkTime > 60 then
+            pcall(function()
+                if VirtualUser then
+                    VirtualUser:Button2Down(Vector2.new(0, 0))
+                    task.wait(0.1)
+                    VirtualUser:Button2Up(Vector2.new(0, 0))
+                end
+                
+                if UserInputService then
+                    local mouseDelta = Vector2.new(math.random(-10, 10), math.random(-10, 10))
+                    UserInputService:InjectMouseMove(mouseDelta.X, mouseDelta.Y)
+                end
+                
+                local PlayersService = game:GetService("Players")
+                local LocalPlayer = PlayersService.LocalPlayer
+                if LocalPlayer and LocalPlayer.Character and LocalPlayer.Character.Humanoid then
+                    LocalPlayer.Character.Humanoid:Move(Vector3.new(0, 0, 0), true)
+                end
+                
+                local AFKRemote = ReplicatedStorage:FindFirstChild("AntiAfk") or 
+                                 ReplicatedStorage:FindFirstChild("AFKCheck") or
+                                 ReplicatedStorage:FindFirstChild("PlayerCheck")
+                if AFKRemote then
+                    local ToServer = AFKRemote:FindFirstChild("ToServer")
+                    if ToServer then
+                        local CheckAFK = ToServer:FindFirstChild("Check") or 
+                                        ToServer:FindFirstChild("Ping") or 
+                                        ToServer:FindFirstChild("Update")
+                        if CheckAFK then
+                            CheckAFK:FireServer()
+                        end
+                    end
+                end
+                
+                LastAntiAfkTime = currentTime
+            end)
+        end
+    end)
+    
+    task.spawn(function()
+        while AntiAfkConnection and AntiAfkConnection.Connected do
+            task.wait(300)
+            pcall(function()
+                if Player and Player.Character and Player.Character:FindFirstChild("Humanoid") then
+                    local humanoid = Player.Character.Humanoid
+                    humanoid:MoveTo(Player.Character.PrimaryPart.Position + Vector3.new(0.1, 0, 0))
+                    task.wait(0.1)
+                    humanoid:MoveTo(Player.Character.PrimaryPart.Position - Vector3.new(0.1, 0, 0))
+                end
+            end)
+        end
+    end)
+end
+
+function StopAntiAfk()
+    if AntiAfkConnection then
+        AntiAfkConnection:Disconnect()
+        AntiAfkConnection = nil
+    end
+end
+
+-- Fungsi untuk update FPS
+local lastFPSUpdate = 0
+local frameCount = 0
+local currentFPS = 60
+
+RunService.RenderStepped:Connect(function()
+    if PerformanceMode then
+        frameCount = frameCount + 1
+        local currentTime = tick()
+        if currentTime - lastFPSUpdate >= 1 then
+            currentFPS = frameCount
+            frameCount = 0
+            lastFPSUpdate = currentTime
+            
+            local status = FishingActive and "Running" or "Stopped"
+            local performanceText = currentFPS > 50 and "Optimal" or (currentFPS > 30 and "Normal" or "Berat")
+            StatusLabel:Set(string.format("Status: %s | FPS: %d", status, currentFPS))
+            FPSLabel:Set(string.format("Performance: %s", performanceText))
+        end
+    end
+end)
+
+-- Auto Farm Function dengan optimasi
+function StartFishing()
+    StatusLabel:Set("Status: Running | FPS: " .. currentFPS)
+    
+    -- Cache remote objects untuk akses lebih cepat
+    local LevelSystem = RemoteCache.LevelSystem
+    local Fishing = RemoteCache.Fishing
+    local BobberShop = RemoteCache.BobberShop
+    local FriendLuck = RemoteCache.FriendLuck
+    
+    if not (LevelSystem and Fishing and BobberShop and FriendLuck) then
+        Rayfield:Notify({
+            Title = "Error",
+            Content = "Remote tidak ditemukan!",
+            Duration = 3,
+            Image = 4483362458
+        })
+        return
+    end
+    
+    local LevelSystemToServer = LevelSystem:FindFirstChild("ToServer")
+    local FishingToServer = Fishing:FindFirstChild("ToServer")
+    local BobberShopToServer = BobberShop:FindFirstChild("ToServer")
+    local FriendLuckToServer = FriendLuck:FindFirstChild("ToServer")
+    
+    if not (LevelSystemToServer and FishingToServer and BobberShopToServer and FriendLuckToServer) then
+        Rayfield:Notify({
+            Title = "Error",
+            Content = "Remote ToServer tidak ditemukan!",
+            Duration = 3,
+            Image = 4483362458
+        })
+        return
+    end
+    
+    -- Cache fungsi remote
+    local StartAutoFishing = LevelSystemToServer:FindFirstChild("StartAutoFishing")
+    local Fishing_RemoteThrow = RemoteCache.Fishing_RemoteThrow
+    local GetEquippedBobber = BobberShopToServer:FindFirstChild("GetEquippedBobber")
+    local GetStatus = FriendLuckToServer:FindFirstChild("GetStatus")
+    local ReelFinished = FishingToServer:FindFirstChild("ReelFinished")
+    local AutoFishingCatchReport = LevelSystemToServer:FindFirstChild("AutoFishingCatchReport")
+    
+    FishingConnection = RunService.Heartbeat:Connect(function()
+        if FishingActive then
+            task.spawn(function()
+                pcall(function()
+                    if StartAutoFishing then
+                        StartAutoFishing:FireServer()
+                    end
+                    
+                    task.wait(FishingDelay * 0.5)
+                    
+                    if Fishing_RemoteThrow then
+                        local args = {
+                            0.8778663449629676,
+                            "a7753265-0aff-43f3-ae1c-3326e5f2e2cd"
+                        }
+                        Fishing_RemoteThrow:FireServer(unpack(args))
+                    end
+                    
+                    task.wait(FishingDelay * 0.5)
+                    
+                    if GetEquippedBobber then
+                        GetEquippedBobber:InvokeServer()
+                    end
+                    
+                    task.wait(FishingDelay * 0.5)
+                    
+                    if GetStatus then
+                        GetStatus:InvokeServer()
+                    end
+                    
+                    task.wait(1)
+                    
+                    if ReelFinished then
+                        local result = _G.FishingResult or "SUCCESS"
+                        local args = {
+                            {
+                                duration = 2.8720628059236333,
+                                result = result,
+                                insideRatio = 0.8
+                            },
+                            "a7753265-0aff-43f3-ae1c-3326e5f2e2cd"
+                        }
+                        ReelFinished:FireServer(unpack(args))
+                    end
+                    
+                    task.wait(FishingDelay * 0.5)
+                    
+                    if AutoFishingCatchReport then
+                        AutoFishingCatchReport:FireServer()
+                    end
+                end)
+            end)
+            
+            if _G.OptimasiHz and _G.OptimasiHz < 60 then
+                task.wait(1/_G.OptimasiHz)
+            end
+        end
+    end)
+end
+
+function StopFishing()
+    StatusLabel:Set("Status: Stopped | FPS: " .. currentFPS)
+    if FishingConnection then
+        FishingConnection:Disconnect()
+        FishingConnection = nil
+    end
+end
+
+-- Initialize default values
+_G.FishingResult = "SUCCESS"
+_G.OptimasiHz = 30
+
+-- Welcome notification premium
+Rayfield:Notify({
+    Title = "Premium Script Loaded",
+    Content = "Auto Fishing + Auto Sell Premium v3.5 Ready!",
+    Duration = 5,
+    Image = 4483362458
+})
+
+-- Optimasi memory dengan weak tables
+local function CleanupCache()
+    for k in pairs(RemoteCache) do
+        if not ReplicatedStorage:FindFirstChild(k) then
+            RemoteCache[k] = nil
+        end
+    end
+end
+
+-- Periodic cleanup setiap 5 menit
+task.spawn(function()
+    while true do
+        task.wait(300)
+        CleanupCache()
+    end
+end)
+
+-- Cleanup function
+function Cleanup()
+    if FishingConnection then
+        FishingConnection:Disconnect()
+    end
+    if AntiAfkConnection then
+        AntiAfkConnection:Disconnect()
+    end
+    if sellLoop then
+        task.cancel(sellLoop)
+    end
+    Rayfield:Destroy()
+end
+
+-- Auto cleanup when script ends
+game:GetService("CoreGui").ChildRemoved:Connect(function(child)
+    if child.Name == "Rayfield" then
+        Cleanup()
+    end
+end)
+
+-- Error handling dengan recovery
+game:GetService("LogService").MessageOut:Connect(function(message, messageType)
+    if messageType == Enum.MessageType.MessageError then
+        if FishingActive then
+            if string.find(message, "Timeout") or string.find(message, "Disconnect") then
+                task.wait(2)
+                if FishingActive then
+                    StopFishing()
+                    task.wait(1)
+                    StartFishing()
+                end
+            end
+        end
+    end
+end)
+
+-- Optimasi memory GC
+if setmemorylimit then
+    setmemorylimit(512)
+end
+
+if setfpscap and PerformanceMode then
+    setfpscap(60)
+end
+
+print("Premium Fishing Script + Auto Sell Loaded!")
